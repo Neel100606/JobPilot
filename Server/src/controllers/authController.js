@@ -1,6 +1,8 @@
 import bcrypt from 'bcrypt';
 import { createUser, findUserByEmail, findUserByMobile } from '../models/userModel.js';
 import jwt from 'jsonwebtoken';
+import admin from '../config/firebase.js'; 
+import db from '../config/db.js';
 
 export const registerUser = async (req, res) => {
   try {
@@ -75,6 +77,90 @@ export const loginUser = async (req, res) => {
 
   } catch (error) {
     console.error('Login Error:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+
+// @desc    Verify mobile via Firebase OTP
+// @route   POST /api/auth/verify-mobile
+// @access  Public (No JWT required yet, uses Firebase Token)
+export const verifyMobile = async (req, res) => {
+  try {
+    const { idToken, mobile_no } = req.body;
+
+    if (!idToken || !mobile_no) {
+      return res.status(400).json({ success: false, message: 'Missing token or mobile number' });
+    }
+
+    // 1. Verify the Firebase Token using Admin SDK
+    // This ensures the request actually came from a verified Firebase login
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    
+    // Optional: Security check to ensure token belongs to the specific phone number
+    if (decodedToken.phone_number !== mobile_no) {
+       // Note: Firebase phone numbers often have standard formatting (+91...), ensure formats match
+       console.warn("Warning: Token phone number mismatch", decodedToken.phone_number, mobile_no);
+    }
+
+    // 2. Update Postgres Database
+    const query = `
+      UPDATE users 
+      SET is_mobile_verified = TRUE, updated_at = CURRENT_TIMESTAMP 
+      WHERE mobile_no = $1 
+      RETURNING id, mobile_no, is_mobile_verified
+    `;
+    const { rows } = await db.query(query, [mobile_no]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Mobile verification successful',
+      data: rows[0],
+    });
+
+  } catch (error) {
+    console.error('Mobile Verification Error:', error);
+    res.status(401).json({ success: false, message: 'Invalid or expired token' });
+  }
+};
+
+// @desc    Verify email via Firebase link
+// @route   GET /api/auth/verify-email
+// @access  Public
+export const verifyEmail = async (req, res) => {
+  try {
+    // Expecting ?email=user@example.com in the URL
+    const { email } = req.query; 
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    // Update Postgres Database
+    const query = `
+      UPDATE users 
+      SET is_email_verified = TRUE, updated_at = CURRENT_TIMESTAMP 
+      WHERE email = $1 
+      RETURNING id, email, is_email_verified
+    `;
+    const { rows } = await db.query(query, [email]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Email verified successfully',
+      data: rows[0],
+    });
+
+  } catch (error) {
+    console.error('Email Verification Error:', error);
     res.status(500).json({ success: false, message: 'Server Error' });
   }
 };

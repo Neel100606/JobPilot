@@ -1,4 +1,4 @@
-import { createCompanyProfile, getCompanyByOwner } from '../models/companyModel.js';
+import { createCompanyProfile, getCompanyByOwner, updateCompany } from '../models/companyModel.js';
 import cloudinary from '../config/cloudinary.js';
 
 // @desc    Register new company
@@ -68,5 +68,72 @@ export const uploadImage = async (req, res) => {
   } catch (error) {
     console.error('Upload Error:', error);
     res.status(500).json({ success: false, message: 'Image upload failed' });
+  }
+};
+
+// @desc    Get company profile
+// @route   GET /api/company/profile
+// @access  Private
+export const getCompanyProfile = async (req, res) => {
+  try {
+    const owner_id = req.user.id;
+    const company = await getCompanyByOwner(owner_id);
+
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'Company profile not found' });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: company
+    });
+  } catch (error) {
+    console.error('Get Profile Error:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+// @desc    Update company profile
+// @route   PUT /api/company/profile
+// @access  Private
+export const updateCompanyProfile = async (req, res) => {
+  try {
+    const owner_id = req.user.id;
+    const { 
+      company_name, address, city, state, country, 
+      postal_code, website, industry, description 
+    } = req.body;
+
+    // Check if company exists
+    const existingCompany = await getCompanyByOwner(owner_id);
+    if (!existingCompany) {
+      return res.status(404).json({ success: false, message: 'Company profile not found' });
+    }
+
+    // Update details
+    const updatedCompany = await updateCompany(owner_id, {
+        company_name: company_name || existingCompany.company_name,
+        address: address || existingCompany.address,
+        city: city || existingCompany.city,
+        state: state || existingCompany.state,
+        country: country || existingCompany.country,
+        postal_code: postal_code || existingCompany.postal_code,
+        website: website || existingCompany.website,
+        industry: industry || existingCompany.industry,
+        description: description || existingCompany.description,
+        // We pass null for images here as they are handled by the upload endpoint
+        logo_url: null, 
+        banner_url: null
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Company profile updated successfully',
+      data: updatedCompany
+    });
+
+  } catch (error) {
+    console.error('Update Profile Error:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
   }
 };
