@@ -1,6 +1,6 @@
 import { createCompanyProfile, getCompanyByOwner, updateCompany } from '../models/companyModel.js';
 import cloudinary from '../config/cloudinary.js';
-
+import db from '../config/db.js';
 // @desc    Register new company
 // @route   POST /api/company/register
 // @access  Private
@@ -53,6 +53,29 @@ export const uploadImage = async (req, res) => {
       folder: 'company_uploads',
     });
 
+    const imageUrl = result.secure_url;
+    const owner_id = req.user.id;
+
+    const fieldName = req.file.fieldname;
+
+    let dbColumn;
+    if (fieldName === 'logo') dbColumn = 'logo_url';
+    else if (fieldName === 'banner') dbColumn = 'banner_url';
+    else return res.status(400).json({ success: false, message: 'Invalid field name' });
+
+    const query = `
+      UPDATE company_profile 
+      SET ${dbColumn} = $1, updated_at = CURRENT_TIMESTAMP 
+      WHERE owner_id = $2 
+      RETURNING *;
+    `;
+
+    const { rows } = await db.query(query, [imageUrl, owner_id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Company profile not found. Create profile first.' });
+    }
+
     // We return the URL so the frontend can send it back with the profile data
     // OR we can update the DB directly if the company already exists.
     // Based on the flow, we'll return the URL.
@@ -99,41 +122,42 @@ export const getCompanyProfile = async (req, res) => {
 export const updateCompanyProfile = async (req, res) => {
   try {
     const owner_id = req.user.id;
-    const { 
+    let { 
       company_name, address, city, state, country, 
-      postal_code, website, industry, description 
+      postal_code, website, industry, description,
+      founded_date, social_links 
     } = req.body;
 
-    // Check if company exists
-    const existingCompany = await getCompanyByOwner(owner_id);
-    if (!existingCompany) {
-      return res.status(404).json({ success: false, message: 'Company profile not found' });
+    // --- FIX: Handle Empty Date String ---
+    // Postgres crashes if you send "" for a DATE column. We must send NULL instead.
+    if (founded_date === '') {
+      founded_date = null;
     }
 
-    // Update details
+    const existingCompany = await getCompanyByOwner(owner_id);
+    if (!existingCompany) {
+      return res.status(404).json({ success: false, message: 'Profile not found' });
+    }
+
     const updatedCompany = await updateCompany(owner_id, {
-        company_name: company_name || existingCompany.company_name,
-        address: address || existingCompany.address,
-        city: city || existingCompany.city,
-        state: state || existingCompany.state,
-        country: country || existingCompany.country,
-        postal_code: postal_code || existingCompany.postal_code,
-        website: website || existingCompany.website,
-        industry: industry || existingCompany.industry,
-        description: description || existingCompany.description,
-        // We pass null for images here as they are handled by the upload endpoint
-        logo_url: null, 
-        banner_url: null
+        ...existingCompany, 
+        company_name, address, city, state, country, 
+        postal_code, website, industry, description,
+        founded_date, social_links,
+        // Ensure we don't accidentally wipe images if frontend didn't send them
+        logo_url: existingCompany.logo_url, 
+        banner_url: existingCompany.banner_url
     });
 
     res.status(200).json({
       success: true,
-      message: 'Company profile updated successfully',
+      message: 'Profile updated successfully',
       data: updatedCompany
     });
 
   } catch (error) {
     console.error('Update Profile Error:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
+    // This will now print the exact DB error in your terminal if it still fails
+    res.status(500).json({ success: false, message: 'Server Error: ' + error.message });
   }
 };
