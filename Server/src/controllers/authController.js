@@ -1,25 +1,59 @@
 import bcrypt from 'bcrypt';
-import { createUser, findUserByEmail, findUserByMobile } from '../models/userModel.js';
 import jwt from 'jsonwebtoken';
+import { createUser, findUserByEmail, findUserByMobile } from '../models/userModel.js';
 import admin from '../config/firebase.js'; 
-import db from '../config/db.js';
+import db from '../config/db.js'; 
 
+// @desc    Register a new user
 export const registerUser = async (req, res) => {
   try {
     const { email, password, full_name, gender, mobile_no } = req.body;
 
-    // 1. Check if user already exists
-    if (await findUserByEmail(email)) {
-      return res.status(400).json({ success: false, message: 'Email already exists' });
-    }
-    if (await findUserByMobile(mobile_no)) {
-      return res.status(400).json({ success: false, message: 'Mobile number already exists' });
+    // 1. Check if email already exists
+    const existingUser = await findUserByEmail(email);
+
+    if (existingUser) {
+      // CASE A: User exists AND is already verified -> STOP THEM
+      if (existingUser.is_mobile_verified) {
+        return res.status(400).json({ success: false, message: 'Email already exists and is verified. Please login.' });
+      }
+
+      // CASE B: User exists but is NOT verified -> UPDATE THEM (Retry Registration)
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      const updateQuery = `
+        UPDATE users 
+        SET full_name = $1, password = $2, gender = $3, mobile_no = $4, updated_at = CURRENT_TIMESTAMP
+        WHERE email = $5
+        RETURNING id;
+      `;
+      
+      try {
+        const { rows } = await db.query(updateQuery, [full_name, hashedPassword, gender, mobile_no, email]);
+        return res.status(200).json({
+          success: true,
+          message: 'Registration updated. Please verify mobile OTP.',
+          data: { user_id: rows[0].id }
+        });
+      } catch (updateError) {
+        if (updateError.code === '23505') { 
+             return res.status(400).json({ success: false, message: 'Mobile number already in use by another account.' });
+        }
+        throw updateError; 
+      }
     }
 
-    // 2. Hash Password
+    // 2. Check if mobile number is taken by another verified user
+    const existingMobile = await findUserByMobile(mobile_no);
+    if (existingMobile) {
+        if (existingMobile.is_mobile_verified) {
+             return res.status(400).json({ success: false, message: 'Mobile number already in use by another verified account.' });
+        }
+        return res.status(400).json({ success: false, message: 'Mobile number linked to a pending registration.' });
+    }
+
+    // 3. CASE C: New User -> CREATE THEM
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // 3. Save User
     const newUser = await createUser({
       email,
       password: hashedPassword,
@@ -36,27 +70,32 @@ export const registerUser = async (req, res) => {
 
   } catch (error) {
     console.error('Registration Error:', error);
-    res.status(500).json({ success: false, message: 'Server Error' });
+    res.status(500).json({ success: false, message: 'Server Error: ' + error.message });
   }
 };
 
+// @desc    Login user
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 1. Find user
     const user = await findUserByEmail(email);
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // 2. Check Password
+    if (!user.is_mobile_verified) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Mobile verification incomplete. Please verify your number to login.' 
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // 3. Generate JWT (90 days validity as per requirements)
     const token = jwt.sign(
       { id: user.id, email: user.email },
       process.env.JWT_SECRET,
@@ -71,7 +110,8 @@ export const loginUser = async (req, res) => {
         id: user.id,
         full_name: user.full_name,
         email: user.email,
-        is_mobile_verified: user.is_mobile_verified
+        is_mobile_verified: user.is_mobile_verified,
+        is_email_verified: user.is_email_verified // Sending this status to frontend
       }
     });
 
@@ -81,10 +121,7 @@ export const loginUser = async (req, res) => {
   }
 };
 
-
 // @desc    Verify mobile via Firebase OTP
-// @route   POST /api/auth/verify-mobile
-// @access  Public (No JWT required yet, uses Firebase Token)
 export const verifyMobile = async (req, res) => {
   try {
     const { idToken, mobile_no } = req.body;
@@ -93,17 +130,8 @@ export const verifyMobile = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing token or mobile number' });
     }
 
-    // 1. Verify the Firebase Token using Admin SDK
-    // This ensures the request actually came from a verified Firebase login
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     
-    // Optional: Security check to ensure token belongs to the specific phone number
-    if (decodedToken.phone_number !== mobile_no) {
-       // Note: Firebase phone numbers often have standard formatting (+91...), ensure formats match
-       console.warn("Warning: Token phone number mismatch", decodedToken.phone_number, mobile_no);
-    }
-
-    // 2. Update Postgres Database
     const query = `
       UPDATE users 
       SET is_mobile_verified = TRUE, updated_at = CURRENT_TIMESTAMP 
@@ -128,19 +156,16 @@ export const verifyMobile = async (req, res) => {
   }
 };
 
-// @desc    Verify email via Firebase link
+// @desc    Verify email (Updates Postgres)
 // @route   GET /api/auth/verify-email
-// @access  Public
 export const verifyEmail = async (req, res) => {
   try {
-    // Expecting ?email=user@example.com in the URL
-    const { email } = req.query; 
+    const { email } = req.query; // Expecting ?email=...
 
     if (!email) {
       return res.status(400).json({ success: false, message: 'Email is required' });
     }
 
-    // Update Postgres Database
     const query = `
       UPDATE users 
       SET is_email_verified = TRUE, updated_at = CURRENT_TIMESTAMP 
@@ -155,7 +180,7 @@ export const verifyEmail = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Email verified successfully',
+      message: 'Email status updated to verified in Database',
       data: rows[0],
     });
 

@@ -31,21 +31,26 @@ export const updateCompany = async (owner_id, updateData) => {
   const {
     company_name, address, city, state, country,
     postal_code, website, industry, description, 
+    founded_date, social_links, // <--- Added these
     logo_url, banner_url
   } = updateData;
-
-  // We update only the fields provided. 
-  // Note: For a real production app, we might build this query dynamically. 
-  // For this assignment, we update the whole record or use COALESCE in SQL 
-  // to keep old values if new ones are null, but here is a simple full update query:
 
   const query = `
     UPDATE company_profile
     SET 
-      company_name = $2, address = $3, city = $4, state = $5, country = $6,
-      postal_code = $7, website = $8, industry = $9, description = $10,
-      logo_url = COALESCE($11, logo_url), 
-      banner_url = COALESCE($12, banner_url),
+      company_name = COALESCE($2, company_name),
+      address = COALESCE($3, address),
+      city = COALESCE($4, city),
+      state = COALESCE($5, state),
+      country = COALESCE($6, country),
+      postal_code = COALESCE($7, postal_code),
+      website = COALESCE($8, website),
+      industry = COALESCE($9, industry),
+      description = COALESCE($10, description),
+      founded_date = COALESCE($11, founded_date),
+      social_links = COALESCE($12, social_links),
+      logo_url = COALESCE($13, logo_url), 
+      banner_url = COALESCE($14, banner_url),
       updated_at = CURRENT_TIMESTAMP
     WHERE owner_id = $1
     RETURNING *;
@@ -53,7 +58,9 @@ export const updateCompany = async (owner_id, updateData) => {
 
   const values = [
     owner_id, company_name, address, city, state, country,
-    postal_code, website, industry, description, logo_url, banner_url
+    postal_code, website, industry, description, 
+    founded_date, social_links, // Added
+    logo_url, banner_url
   ];
 
   const { rows } = await db.query(query, values);
