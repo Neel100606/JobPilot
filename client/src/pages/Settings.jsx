@@ -4,10 +4,11 @@ import {
   Grid, Divider, Tab, Tabs, IconButton, Avatar
 } from '@mui/material';
 import { useForm, Controller } from 'react-hook-form';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux'; // <--- Added useDispatch
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
+import { logout } from '../store/authSlice'; // <--- Import logout action
 
 // Icons
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -17,8 +18,8 @@ import BookmarkBorderIcon from '@mui/icons-material/BookmarkBorder';
 import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
-import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'; // Plans
-import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'; // All Companies
+import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'; 
+import BusinessOutlinedIcon from '@mui/icons-material/BusinessOutlined'; 
 import DeleteIcon from '@mui/icons-material/Delete';
 import FacebookIcon from '@mui/icons-material/Facebook';
 import TwitterIcon from '@mui/icons-material/Twitter';
@@ -26,12 +27,12 @@ import InstagramIcon from '@mui/icons-material/Instagram';
 import YouTubeIcon from '@mui/icons-material/YouTube';
 import PhoneInTalkOutlinedIcon from '@mui/icons-material/PhoneInTalkOutlined';
 import NotificationsNoneOutlinedIcon from '@mui/icons-material/NotificationsNoneOutlined';
-import PublicIcon from '@mui/icons-material/Public'; // Language
+import PublicIcon from '@mui/icons-material/Public'; 
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
 // --- COMPONENTS ---
 
-// 1. Top Navigation Strip (The gray text menu at the very top)
+// 1. Top Navigation Strip
 const TopNavStrip = () => (
   <div className="bg-[#F1F2F4] border-b border-gray-200">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-10 flex items-center justify-between text-sm text-gray-600">
@@ -57,7 +58,7 @@ const TopNavStrip = () => (
   </div>
 );
 
-// 2. Main Logo Header (White bar with Logo & Post Job)
+// 2. Main Logo Header
 const MainHeader = () => (
   <div className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
@@ -101,6 +102,7 @@ const SidebarItem = ({ icon, label, active, onClick }) => (
 // --- MAIN PAGE COMPONENT ---
 const Settings = () => {
   const { token, user } = useSelector((state) => state.auth);
+  const dispatch = useDispatch(); // <--- Initialize dispatch
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -115,6 +117,12 @@ const Settings = () => {
       phone: '', email: '', address: ''
     }
   });
+
+  // Handle Logout Logic
+  const handleLogout = () => {
+    dispatch(logout()); // Clear Redux state & LocalStorage
+    navigate('/login'); // Redirect to login page
+  };
 
   // Fetch Data
   useEffect(() => {
@@ -183,11 +191,11 @@ const Settings = () => {
   return (
     <div className="min-h-screen bg-[#F8F9FA]">
       
-      {/* 1. Header Section (Two Rows) */}
+      {/* 1. Header Section */}
       <TopNavStrip />
       <MainHeader />
 
-      {/* 2. Main Layout (Sidebar + Content) */}
+      {/* 2. Main Layout */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex items-start gap-8">
         
         {/* --- LEFT SIDEBAR --- */}
@@ -197,7 +205,7 @@ const Settings = () => {
           </Typography>
           
           <div className="flex flex-col gap-1">
-            <SidebarItem icon={<DashboardIcon />} label="Overview" />
+            <SidebarItem icon={<DashboardIcon />} label="Overview" onClick={() => navigate('/dashboard')} />
             <SidebarItem icon={<PersonOutlineIcon />} label="Employers Profile" />
             <SidebarItem icon={<CloudUploadOutlinedIcon />} label="Post a Job" />
             <SidebarItem icon={<WorkOutlineIcon />} label="My Jobs" />
@@ -208,7 +216,8 @@ const Settings = () => {
           </div>
 
           <div className="mt-8 pt-4 border-t border-gray-200">
-             <SidebarItem icon={<LogoutIcon />} label="Log-out" onClick={() => navigate('/login')} />
+             {/* Updated Log-out Item */}
+             <SidebarItem icon={<LogoutIcon />} label="Log-out" onClick={handleLogout} />
           </div>
         </div>
 

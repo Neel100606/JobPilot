@@ -31,7 +31,7 @@ export const updateCompany = async (owner_id, updateData) => {
   const {
     company_name, address, city, state, country,
     postal_code, website, industry, description, 
-    founded_date, social_links, // <--- Added these
+    founded_date, social_links, 
     logo_url, banner_url
   } = updateData;
 
